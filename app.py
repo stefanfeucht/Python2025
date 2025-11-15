@@ -1,26 +1,28 @@
-#Github: incluir el mismo chunck de los imports
-import plotly as pl
-import plotly.express as px
-#import numpy as np
-import pandas as pd
+import os
 import pathlib
+import pandas as pd
 import dash
-
-
-from dash import Dash,dcc,html,dash_table
-from dash.dependencies import Input,Output
+import plotly.express as px
+from dash import Dash, html, dcc, dash_table
+from dash.dependencies import Input, Output
 import dash_bootstrap_components as dbc
 
-# Paso 1: Inicializar la app
+# ===========================
+#   Inicializar App
+# ===========================
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-#Github:agregar linea de server que usa github
-server=app.server
-
+server = app.server  # necesario para Render
 app.title = "Dashboard Financiero"
 
-# Paso 2: Cargar dataset
-df = pd.read_csv("empresas.csv")
+# ===========================
+#   Cargar Dataset (Render-safe)
+# ===========================
+DATA_PATH = pathlib.Path(__file__).parent.joinpath("empresas.csv")
+
+if not DATA_PATH.exists():
+    raise FileNotFoundError(f"❌ ERROR: No se encontró el archivo {DATA_PATH}")
+
+df = pd.read_csv(DATA_PATH)
 
 sales_list = [
     "Total Revenues", "Cost of Revenues", "Gross Profit", "Total Operating Expenses",
@@ -28,24 +30,25 @@ sales_list = [
     "Market Cap", "Multiple of Revenue"
 ]
 
-# ====== Layout ======
+# ===========================
+#         LAYOUT
+# ===========================
 app.layout = html.Div([
 
+    html.H2("Dashboard Financiero", style={"textAlign": "center"}),
+
     html.Div([
-        # Dropdown para empresas
         html.Div(
             dcc.Dropdown(
                 id="empresa-dropdown",
-                value=["Apple", "Tesla", "Microsoft", "Google"],  
+                value=["Apple", "Tesla", "Microsoft", "Google"],
                 options=[{"label": x, "value": x} for x in sorted(df["Company"].unique())],
                 multi=True,
                 clearable=False
             ),
-            className="six columns",
             style={"width": "50%"}
         ),
 
-        # Dropdown para variable numérica
         html.Div(
             dcc.Dropdown(
                 id="numericdropdown",
@@ -53,28 +56,21 @@ app.layout = html.Div([
                 clearable=False,
                 options=[{"label": x, "value": x} for x in sales_list]
             ),
-            className="six columns",
             style={"width": "50%"}
         )
-    ], className="row", style={"display": "flex", "gap": "10px"}),
+    ], style={"display": "flex", "gap": "10px"}),
 
-    # ====== Gráficas ======
-    html.Div([
-        dcc.Graph(id="bar", figure={})
-    ]),
+    html.Br(),
 
-    html.Div([
-        dcc.Graph(id="boxplot", figure={})
-    ]),
+    dcc.Graph(id="bar"),
+    dcc.Graph(id="boxplot"),
 
-    # ====== Tabla =======
-    html.Div(
-        html.Div(id="table-container_1"),
-        style={"marginBottom": "15px", "marginTop": "0px"}
-    )
+    html.Div(id="table-container_1")
 ])
 
-# ====== Callback ======
+# ===========================
+#        CALLBACKS
+# ===========================
 @app.callback(
     [
         Output("bar", "figure"),
@@ -87,42 +83,35 @@ app.layout = html.Div([
     ]
 )
 def display_value(selected_stock, selected_numeric):
-    # Manejar caso sin selección
-    if not selected_stock or len(selected_stock) == 0:
-        dfv_fltrd = df[df["Company"].isin(["Amazon", "Tesla", "Microsoft", "Apple", "Google"])]
-    else:
-        dfv_fltrd = df[df["Company"].isin(selected_stock)]
 
-    # ====== Gráfica de líneas ======
+    if not selected_stock or len(selected_stock) == 0:
+        selected_stock = ["Amazon", "Tesla", "Microsoft", "Apple", "Google"]
+
+    dfv_fltrd = df[df["Company"].isin(selected_stock)]
+
     fig = px.line(
         dfv_fltrd,
         color="Company",
         x="Quarter",
         y=selected_numeric,
-        markers=True,
-        width=1000,
-        height=500
+        markers=True
     )
 
     fig.update_layout(
         title=f"{selected_numeric} de {', '.join(selected_stock)}",
-        xaxis_title="Quarters"
+        xaxis_title="Quarter"
     )
 
-    fig.update_traces(line=dict(width=2))
-
-    # ====== Boxplot ======
     fig2 = px.box(
         dfv_fltrd,
         color="Company",
         x="Company",
-        y=selected_numeric,
-        width=1000,
-        height=500
+        y=selected_numeric
     )
-    fig2.update_layout(title=f"{selected_numeric} de {', '.join(selected_stock)}")
 
-    # ====== Tabla ======
+    fig2.update_layout(title=f"{selected_numeric} - Distribución por Empresa")
+
+    # Tabla
     df_reshaped = dfv_fltrd.pivot(index="Company", columns="Quarter", values=selected_numeric)
     df_reshaped2 = df_reshaped.reset_index()
 
@@ -130,16 +119,15 @@ def display_value(selected_stock, selected_numeric):
         columns=[{"name": i, "id": i} for i in df_reshaped2.columns],
         data=df_reshaped2.to_dict("records"),
         export_format="csv",
-        fill_width=True,
         style_cell={"fontSize": "12px"},
-        style_header={"backgroundColor": "blue", "color": "white", "fontWeight": "bold"},
-        style_data={"backgroundColor": "white", "color": "black"}
+        style_header={"backgroundColor": "blue", "color": "white", "fontWeight": "bold"}
     )
 
     return fig, fig2, table
 
-
-# ====== Paso 5: Correr app ======
-#Github : en la version para git hay que agregar el host 
+# ===========================
+#       RUN SERVER
+# ===========================
 if __name__ == "__main__":
-    app.run(debug=False, host="0.0.0.0",port=10000)
+    port = int(os.environ.get("PORT", 8050))
+    app.run(debug=False, host="0.0.0.0", port=port)
